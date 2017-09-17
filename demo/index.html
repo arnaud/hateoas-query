@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<meta charset=utf-8>
+<script src=../dist/hateoas-query.min.js></script>
+<script>
+const request = options => {
+  return { items: [{ id: 1, amount: 15 }, { id: 2, amount: 18 }, { id: 3, amount: 23 }] }
+}
+const myquery = async (...args) => {
+  args[0] = args[0].attributes || args[0] // handle backbone model attributes
+  return await hateoas({ request })(...args)
+}
+const user = {
+  attributes: {
+    firstname: 'bob',
+    _links: {
+      invoices: {
+        href: '/bob/invoices'
+      }
+    }
+  }
+}
+
+const runExample = async () => {
+  const invoices = await myquery(user, 'invoices[]')
+  console.log(invoices)
+  const totalAmount = invoices.map(i => i.amount).reduce((a, b) => a + b)
+  console.log('Total amount:', totalAmount)
+}
+
+console.log('node:', user)
+runExample()
+</script>

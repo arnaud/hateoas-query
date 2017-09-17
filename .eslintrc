@@ -1,0 +1,9 @@
+{
+  "parser": "babel-eslint",
+  "extends": "semistandard",
+
+  "rules": {
+    "no-console": 2,
+    "semi": [2, "never"]
+  }
+}
