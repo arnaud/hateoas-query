@@ -1,5 +1,14 @@
-import * as _ from 'lodash'
-// import * as log from 'loglevel'
+import extend from 'lodash-es/extend'
+import get from 'lodash-es/get'
+import has from 'lodash-es/has'
+import keys from 'lodash-es/keys'
+import pick from 'lodash-es/pick'
+import pickBy from 'lodash-es/pickBy'
+import values from 'lodash-es/values'
+import find from 'lodash-es/find'
+import filter from 'lodash-es/filter'
+import map from 'lodash-es/map'
+import reduce from 'lodash-es/reduce'
 
 /**
  * Traverse a HATEOAS REST API through a selector that descends the corresponding links in a HATEOAS compliant way.
@@ -8,7 +17,6 @@ import * as _ from 'lodash'
  * > query(user, `accounts[].invoices[]`)
  * >   .then(invoices => {
  * >     const invoiceAccountIds = invoices.map(({ id }) => id);
- * >     log.debug('Invoice accounts:', invoiceAccountIds);
  * >   });
  *
  * @param {node}   node       The root node from which the traversal begins with.
@@ -26,9 +34,10 @@ import * as _ from 'lodash'
  *                            whichever their origin (whichever which they descend from in terms of tree traversal).
  *                            Its format is `[arr]` where `arr` is the concatenated reduction of every results.
  */
-async function query (node, selector, options, results = []) {
-  options = _.extend({}, { request: this.request, strict: this.strict }, options)
-  return extended(concatReducer(await queryIsolated(node, selector, options, results)))
+function query (node, selector, options, results = []) {
+  options = extend({}, { request: this.request, strict: this.strict }, options)
+  return queryIsolated(node, selector, options, results)
+    .then(result => extended(concatReducer(result)))
 }
 
 /**
@@ -43,19 +52,18 @@ async function query (node, selector, options, results = []) {
  *                            whichever their origin (whichever which they descend from in terms of tree traversal).
  *                            Its format is `[[arr1], [arr2], [...]]` where `arrN` is the result of its N-origin.
  */
-async function queryIsolated (node, selector, options, results = []) {
-  options = _.extend({}, { request: this.request, strict: this.strict }, options)
+function queryIsolated (node, selector, options, results = []) {
+  if (this) options = extend({}, { request: this.request, strict: this.strict }, options)
   if (!selector) {
-    const only = _.get(options, 'only')
+    const only = get(options, 'only')
     if (!only) {
-      return extended(node)
-    } else if (_.isArray(only)) {
-      return _.pick(extended(node), only)
+      return Promise.resolve(extended(node))
+    } else if (Array.isArray(only)) {
+      return Promise.resolve(pick(extended(node), only))
     } else {
-      return _.pickBy(extended(node), only)
+      return Promise.resolve(pickBy(extended(node), only))
     }
   }
-  // log.debug(`"${selector}"`, { node })
   const links = selector.split('.')
   const path = links.shift()
   const isIterable = isSelectorIterable(path)
@@ -65,7 +73,7 @@ async function queryIsolated (node, selector, options, results = []) {
   let actionParams
   if (isAction) {
     requestOptions = getAction(node, path)
-    actionParams = _.get(options, 'actionParams')
+    actionParams = get(options, 'actionParams')
   } else {
     requestOptions = { path: getLink(node, path) }
   }
@@ -76,72 +84,71 @@ async function queryIsolated (node, selector, options, results = []) {
     if (item !== undefined) {
       results.unshift(item) // stack the responses in reverse order
 
-      let response = await queryIsolated(item, remainingSelector, options, results)
-      return extended(_.extend(response, { _origin: node }))
+      return queryIsolated(item, remainingSelector, options, results)
+        .then(response => extended(extend(response, { _origin: node })))
     } else {
       const error = `Could not traverse \`${selector}\``
-      if (_.get(options, 'strict')) {
+      if (get(options, 'strict')) {
         throw new Error(`[Strict mode] ${error}`)
       } else {
-        // log.warn(error, { node })
-        return undefined
+        return Promise.resolve(undefined)
       }
     }
   }
 
-  let response = await options.request(
-    _.extend({}, requestOptions, { params: actionParams })
+  return options.request(
+    extend({}, requestOptions, { params: actionParams })
   )
-  results.unshift(response) // FIXME: stack the responses in reverse order
-  if (!isIterable) {
-    response = await queryIsolated(response, remainingSelector, options, results)
-    return response
-  } else {
-    const { items } = response
-    const filteredItems = isSelectorFiltered(path) ? items[getSelectorFilter(path)] : items
-    const responses = await Promise.all(filteredItems.map(async item => {
-      const res = await queryIsolated(item, remainingSelector, options, results)
-      return _.extend(res, { _origin: node })
-    }))
-    return extended(responses)
-  }
-/*
+    .then(response => {
+      results.unshift(response) // FIXME: stack the responses in reverse order
+      if (!isIterable) {
+        return queryIsolated(response, remainingSelector, options, results)
+      } else {
+        const { items } = response
+        const filteredItems = isSelectorFiltered(path) ? items[getSelectorFilter(path)] : items
+        return Promise.all(filteredItems.map(item =>
+          queryIsolated(item, remainingSelector, options, results)
+            .then(res =>
+              extend(res, { _origin: node })
+            )
+        )).then(responses => extended(responses))
+      }
     })
     .catch(error => {
-      log.error(requestOptions, error, { node })
       throw error
     })
-*/
 }
 
 /**
  * Extends an object or collection with lodash methods for easier.
- * @param {*} obj 
+ * @param {*} obj
  */
 function extended (obj) {
-  const isArray = _.isArray(obj)
+  if (typeof obj !== 'object') return obj
+  // chainable queries
   obj.query = (...args) => query(obj, ...args)
   obj.queryIsolated = (...args) => queryIsolated(obj, ...args)
+  const isArray = Array.isArray(obj)
   // object
   if (!isArray) {
-    obj.get = (...args) => extended(_.get(obj, ...args))
-    obj.has = (...args) => extended(_.has(obj, ...args))
-    obj.keys = (...args) => extended(_.keys(obj, ...args))
-    obj.values = (...args) => extended(_.values(obj, ...args))
+    obj.get = (...args) => extended(get(obj, ...args))
+    obj.has = (...args) => extended(has(obj, ...args))
+    obj.keys = (...args) => extended(keys(obj, ...args))
+    obj.values = (...args) => extended(values(obj, ...args))
   }
   // collection
   if (isArray) {
-    obj.find = (...args) => extended(_.find(obj, ...args))
-    obj.map = (...args) => extended(_.map(obj, ...args))
-    obj.filter = (...args) => extended(_.filter(obj, ...args))
-    obj.reduce = (...args) => extended(_.reduce(obj, ...args))
+    obj.find = (...args) => extended(find(obj, ...args))
+    obj.map = (...args) => extended(map(obj, ...args))
+    obj.filter = (...args) => extended(filter(obj, ...args))
+    obj.reduce = (...args) => reduce(obj, ...args)
   }
   return obj
 }
 
-const getLink = (node, path) => _.get(node, `_links.${path.replace(/\[\d*]$/, '')}.href`)
-const getAction = (node, path) => _.get(node, `_actions.${path.replace(/^@/, '')}`, {})
-const getAttribute = (node, path) => _.get(node, path)
+const getLink = (node, path) => get(node, `_links.${path.replace(/\[\d*]$/, '')}.href`)
+const getAction = (node, path) => get(node, `_actions.${path.replace(/^@/, '')}`, {})
+const getAttribute = (node, path) => get(node, path)
 
 const isSelectorIterable = selector => /\[\d*]$/.test(selector)
 const isSelectorFiltered = selector => /\[\d+]$/.test(selector)
@@ -153,10 +160,10 @@ const getSelectorFilter = selector => {
 }
 
 function concatReducer (collection) {
-  if (collection && _.isArray(collection[0])) {
-    return _.reduce(collection, (accumulator, current) => {
-      return accumulator && current ? accumulator.concat(current) : accumulator || [current]
-    })
+  if (collection && Array.isArray(collection[0])) {
+    return reduce(collection, (accumulator, current) =>
+      accumulator && current ? accumulator.concat(current) : accumulator || [current]
+    )
   } else {
     return collection
   }
@@ -171,4 +178,4 @@ instance.isolated = ({ request, strict }) => queryIsolated.bind({ request, stric
 instance.concatReducer = concatReducer
 instance.extended = extended
 
-module.exports = instance
+export default instance

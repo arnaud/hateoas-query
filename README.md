@@ -125,7 +125,7 @@ This function has all the same implementation as `query()` but its results are n
 
 ## Contribute
 
-Feel free to dive in! [Open an issue](https://github.com/arnahd/hateoas-query/issues/new) or submit PRs.
+Feel free to dive in! [Open an issue](https://github.com/arnaud/hateoas-query/issues/new) or submit PRs.
 
 ## License
 
