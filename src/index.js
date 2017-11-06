@@ -9,6 +9,7 @@ import find from 'lodash-es/find'
 import filter from 'lodash-es/filter'
 import map from 'lodash-es/map'
 import reduce from 'lodash-es/reduce'
+import isArray from 'lodash-es/isArray'
 
 /**
  * Traverse a HATEOAS REST API through a selector that descends the corresponding links in a HATEOAS compliant way.
@@ -79,7 +80,7 @@ function queryIsolated (node, selector, options, results = []) {
   }
 
   const handleResponse = (response) => {
-    const responseIsIterable = _.isArray(response);
+    const responseIsIterable = isArray(response);
     if (!isIterable && !responseIsIterable) {
       return queryIsolated(response, remainingSelector, options, results);
     } else {
@@ -88,7 +89,7 @@ function queryIsolated (node, selector, options, results = []) {
       const filteredItems = isSelectorFiltered(path) ? items[getSelectorFilter(path)] : items;
       const promises = filteredItems.map(item => {
         return queryIsolated(item, remainingSelector, options, results)
-          .then(response => _.extend(response, { _origin: node }));
+          .then(response => extend(response, { _origin: node }));
       });
       return Promise.all(promises);
     }
@@ -116,7 +117,7 @@ function queryIsolated (node, selector, options, results = []) {
     .then(response => {
       results.unshift(response) // FIXME: stack the responses in reverse order
       return handleResponse(response)
-        .then(responses => extended(responses));
+        .then(response => extended(response));
     })
     .catch(error => {
       throw error
