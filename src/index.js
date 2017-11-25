@@ -9,6 +9,7 @@ import find from 'lodash-es/find'
 import filter from 'lodash-es/filter'
 import map from 'lodash-es/map'
 import reduce from 'lodash-es/reduce'
+import isArray from 'lodash-es/isArray'
 
 /**
  * Traverse a HATEOAS REST API through a selector that descends the corresponding links in a HATEOAS compliant way.
@@ -78,14 +79,28 @@ function queryIsolated (node, selector, options, results = []) {
     requestOptions = { path: getLink(node, path) }
   }
 
+  const handleResponse = (response) => {
+    const responseIsIterable = isArray(response);
+    if (!isIterable && !responseIsIterable) {
+      return queryIsolated(response, remainingSelector, options, results);
+    } else {
+      let { items } = response;
+      if (responseIsIterable) items = response;
+      const filteredItems = isSelectorFiltered(path) ? items[getSelectorFilter(path)] : items;
+      const promises = filteredItems.map(item => {
+        return queryIsolated(item, remainingSelector, options, results)
+          .then(response => extend(response, { _origin: node }));
+      });
+      return Promise.all(promises);
+    }
+  };
+  
   if (!(requestOptions.path || requestOptions.action)) {
     // if neither a _link or an _action, check if it matches an attribute
     const item = getAttribute(node, path)
     if (item !== undefined) {
       results.unshift(item) // stack the responses in reverse order
-
-      return queryIsolated(item, remainingSelector, options, results)
-        .then(response => extended(extend(response, { _origin: node })))
+      return handleResponse(item);
     } else {
       const error = `Could not traverse \`${selector}\``
       if (get(options, 'strict')) {
@@ -101,18 +116,8 @@ function queryIsolated (node, selector, options, results = []) {
   )
     .then(response => {
       results.unshift(response) // FIXME: stack the responses in reverse order
-      if (!isIterable) {
-        return queryIsolated(response, remainingSelector, options, results)
-      } else {
-        const { items } = response
-        const filteredItems = isSelectorFiltered(path) ? items[getSelectorFilter(path)] : items
-        return Promise.all(filteredItems.map(item =>
-          queryIsolated(item, remainingSelector, options, results)
-            .then(res =>
-              extend(res, { _origin: node })
-            )
-        )).then(responses => extended(responses))
-      }
+      return handleResponse(response)
+        .then(response => extended(response));
     })
     .catch(error => {
       throw error
@@ -148,7 +153,7 @@ function extended (obj) {
 
 const getLink = (node, path) => get(node, `_links.${path.replace(/\[\d*]$/, '')}.href`)
 const getAction = (node, path) => get(node, `_actions.${path.replace(/^@/, '')}`, {})
-const getAttribute = (node, path) => get(node, path)
+const getAttribute = (node, path) => get(node, path.replace(/\[\d*]$/, ''))
 
 const isSelectorIterable = selector => /\[\d*]$/.test(selector)
 const isSelectorFiltered = selector => /\[\d+]$/.test(selector)
