@@ -1,6 +1,6 @@
 {
   "name": "hateoas-query",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "HATEOAS query client",
   "author": "Arnaud Leymet",
   "license": "MIT",
