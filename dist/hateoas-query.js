@@ -4028,6 +4028,13 @@ function queryIsolated (node, selector, options, results) {
 
       return queryIsolated(item, remainingSelector, options, results)
         .then(function (response) { return extended(assignIn$1(response, { _origin: node })); })
+        .catch(function (error) {
+          if (get(options, 'strict')) {
+            throw new Error(("[Strict mode] " + error))
+          } else {
+            return Promise.resolve(undefined)
+          }
+        })
     } else {
       var error = "Could not traverse `" + selector + "`";
       if (get(options, 'strict')) {
@@ -4051,7 +4058,15 @@ function queryIsolated (node, selector, options, results) {
         return Promise.all(filteredItems.map(function (item) { return queryIsolated(item, remainingSelector, options, results)
             .then(function (res) { return assignIn$1(res, { _origin: node }); }
             ); }
-        )).then(function (responses) { return extended(responses); })
+        ))
+        .then(function (responses) { return extended(responses); })
+        .catch(function (error) {
+          if (get(options, 'strict')) {
+            throw new Error(("[Strict mode] " + error))
+          } else {
+            return Promise.resolve(undefined)
+          }
+        })
       }
     })
     .catch(function (error) {
