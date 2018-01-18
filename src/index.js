@@ -86,6 +86,13 @@ function queryIsolated (node, selector, options, results = []) {
 
       return queryIsolated(item, remainingSelector, options, results)
         .then(response => extended(extend(response, { _origin: node })))
+        .catch(error => {
+          if (get(options, 'strict')) {
+            throw new Error(`[Strict mode] ${error}`)
+          } else {
+            return Promise.resolve(undefined)
+          }
+        })
     } else {
       const error = `Could not traverse \`${selector}\``
       if (get(options, 'strict')) {
@@ -111,7 +118,15 @@ function queryIsolated (node, selector, options, results = []) {
             .then(res =>
               extend(res, { _origin: node })
             )
-        )).then(responses => extended(responses))
+        ))
+        .then(responses => extended(responses))
+        .catch(error => {
+          if (get(options, 'strict')) {
+            throw new Error(`[Strict mode] ${error}`)
+          } else {
+            return Promise.resolve(undefined)
+          }
+        })
       }
     })
     .catch(error => {
